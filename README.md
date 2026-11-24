@@ -7,37 +7,55 @@ El PC ejecuta un **hub** que es el único que habla USB HID con el volante y
 publica una API HTTP/WebSocket. La interfaz es una **PWA** servida por ese mismo
 hub: la misma en el navegador del PC y en el teléfono.
 
+Hay dos implementaciones del hub, con la misma API, configuración y perfiles:
+
+- **Rust** (`hub-rs/`): recomendada. Un único `.exe` con la PWA embebida, sin
+  Node ni consola, con bandeja del sistema e instalador.
+- **Node** (`hub/`): referencia y entorno de desarrollo.
+
 > Proyecto no oficial. No incluye firmware ni software propietario de FFBeast.
 
 ## Estado
 
-MVP completo (M0–M4) probado con hardware real (FFBeast 26.1.1 PRO) y con el
-dispositivo simulado:
+MVP completo (M0–M5 y M7) probado con hardware real (FFBeast 26.1.1 PRO) y con
+el dispositivo simulado:
 
 - Detección y reconexión automática del volante.
 - Lectura de Effects, Hardware, GPIO, ADC y licencia.
 - Escritura con **read-back** y errores claros.
-- Estado en vivo por WebSocket a 20 Hz.
+- Estado en vivo por WebSocket a 20 Hz, incluidos los ejes del joystick.
 - Perfiles JSON (crear, aplicar, borrar, importar/exportar).
 - **Pines**: 10 pines con sus modos, extensión y bus SPI.
 - **Botones**: matriz de 32 botones con modos y edición por lotes.
 - **Ejes**: 3 ejes ADC con zonas muertas, suavizado y umbrales.
+- **Pedales**: lectura en vivo de los 3 ejes del joystick y calibración local.
 - **Monitor**: gráfica de posición/torque de 30 s, pausa y exportación CSV.
-- Token, QR, rate limit, modo solo lectura y registro.
+- **Dynamic dampening** (Effects, offset 14) para firmware 24.1.5+ y licencia PRO.
+- Token, QR, rate limit, modo solo lectura, diagnóstico ZIP y registro.
+- Hub Rust autónomo con **bandeja**, autostart e **instalador por usuario**.
 - UI responsive con estética oscura tipo Pit House.
 
-Pendiente (fases siguientes): pulido de hardware y dynamic dampening (M6),
+Pendiente (fases siguientes): validación prolongada de estabilidad USB (M6),
 firma de código y auto-actualización.
 
 ## Requisitos
 
-- Windows 10/11.
+- Windows 10/11 x64.
 - **Node.js 22 LTS** (o 24 LTS) solo para el hub Node y el desarrollo. El
   instalador y el paquete portable no lo necesitan. Node 20 ya no tiene soporte.
+- Para compilar el hub Rust: Rust estable (toolchain GNU en Windows), binutils
+  (`windres`/`dlltool`) e Inno Setup 6 si vas a generar el instalador. No hace
+  falta para usar el `.exe` ni el instalador ya compilados.
 - El volante conectado por USB al PC.
 - Para el móvil: misma red WiFi que el PC.
 
 ## Instalación y arranque
+
+Para uso normal, usa el **instalador** o el **paquete portable** (más abajo).
+Las instrucciones siguientes arrancan el hub Node desde el código, útil para
+desarrollo:
+
+### Desde el código (hub Node)
 
 ```bash
 cd ffbeast-remote
@@ -66,12 +84,15 @@ dist\FFBeastRemote-Setup-1.0.0.exe
 
 - Instala en `%LOCALAPPDATA%\FFBeast Remote` y crea accesos directos en Inicio
   (y en el escritorio, opcional).
+- No abre consola: arranca en la **bandeja** y abre la UI en el navegador. Si ya
+  hay una instancia, el acceso directo solo abre la interfaz existente.
+- El **token** y el **QR** para el móvil están en **Ajustes → Emparejar un móvil**.
 - **Iniciar con Windows** opcional: desmarcado en una instalación nueva y se
   conserva tal cual al actualizar.
 - **Firewall** opcional para el móvil: crea una regla por programa para
   `ffbeast-hub.exe` en redes privadas. Pide UAC una sola vez.
 - El desinstalador cierra el hub, quita su autostart y la regla de firewall, y
-  pregunta si quieres conservar los perfiles y la configuración.
+  pregunta si quieres borrar también los perfiles y la configuración.
 - No está firmado: SmartScreen mostrará un aviso. Usa **Más información →
   Ejecutar de todas formas**. La firma llegará cuando haya certificado.
 
@@ -90,6 +111,10 @@ Alternativa sin instalación: `hub-rs\target\ffbeast-hub-1.0.0-win64.zip`
 contiene `ffbeast-hub.exe`, `start.cmd`, `firewall.ps1`, `README.txt` y
 `LICENSE`. El `.exe` es autónomo (PWA embebida) y comparte configuración con el
 instalador.
+
+Para compilarlo desde el código: `npm run build -w @ffbeast/web` y luego
+`cd hub-rs && cargo build --release --bin ffbeast-hub`. Los detalles de
+toolchain y del paquete están en `hub-rs/README.md`.
 
 ### Sin volante (modo simulado)
 
@@ -118,12 +143,18 @@ npm run dev:mock
 | Variable | Efecto |
 |---|---|
 | `FFBEAST_PORT` | Puerto HTTP (por defecto 47100) |
+| `FFBEAST_TOKEN` | Fija el token; si no, se genera uno aleatorio |
 | `FFBEAST_MOCK=1` | Usa el volante simulado |
 | `FFBEAST_READ_ONLY=1` | Arranca en solo lectura |
 | `FFBEAST_DATA_DIR` | Cambia la carpeta de datos |
 | `FFBEAST_STATE_HZ` | Frecuencia del estado en vivo (1–60) |
 | `FFBEAST_LOG_LEVEL` | `debug`, `info`, `warn`, `error` |
-| `FFBEAST_OPEN=1` | Abre el navegador al arrancar |
+| `FFBEAST_OPEN=1` | Abre el navegador al arrancar (solo hub Node) |
+
+El hub Rust acepta las mismas opciones como argumentos: `--port`, `--mock`,
+`--read-only`, `--state-hz`, `--log-level`, `--data-dir`, además de `--open`,
+`--no-tray`, `--web-root`, `--quiet`, `--install-autostart` y
+`--uninstall-autostart`. Usa `ffbeast-hub.exe --help` para verlas todas.
 
 ## Uso desde el móvil
 
@@ -147,6 +178,10 @@ Si el móvil no conecta:
   ```powershell
   powershell -ExecutionPolicy Bypass -File scripts\firewall.ps1
   ```
+
+  Si usaste el instalador, la tarea de firewall ya crea la regla por programa;
+  para repetirla usa `%LOCALAPPDATA%\FFBeast Remote\firewall.ps1` (acepta
+  `-Remove`).
 
 - Evita redes de invitados con aislamiento de clientes y VPNs que separen rutas.
 - Si cambia la IP del PC, vuelve a escanear el QR.
@@ -206,12 +241,16 @@ ffbeast-remote/
 │  └─ test/              # códec, auth, seguridad y API (54 tests)
 ├─ web/                  # PWA React + Vite
 │  ├─ src/pages/         # Dashboard, Efectos, Hardware, Pines, Botones, Ejes,
-│  │                     # Monitor, Perfiles, Ajustes
-│  ├─ src/components/    # Layout, controles, gauge, gráfica, borradores, toasts
+│  │                     # Monitor, Perfiles, Más, Ajustes
+│  ├─ src/components/    # Layout, controles, gauge, gráfica, pedales, toasts
 │  ├─ src/hub.tsx        # contexto: API + WebSocket + acciones
 │  ├─ src/live.ts        # estado en vivo aislado de React
 │  └─ public/            # manifest e iconos
 ├─ hub-rs/               # hub Rust + PWA embebida (exe autónomo)
+│  ├─ src/hid/           # códec, campos y driver HID nativo
+│  ├─ src/server/        # API axum, auth, WebSocket y estáticos
+│  ├─ src/tray.rs        # bandeja del sistema
+│  └─ src/startup.rs     # autostart en HKCU (sin admin)
 ├─ installer/            # script de Inno Setup 6 y firewall del instalador
 ├─ dist/                 # instalador compilado y su SHA-256
 └─ scripts/              # firewall, autostart, iconos, build-installer
@@ -225,19 +264,21 @@ Base: `http://<host>:47100`. Autenticación por `Authorization: Bearer <token>`,
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| GET | `/api/health` | Sin auth |
+| GET | `/api/health` | Sin auth; en localhost siembra la cookie de sesión |
 | GET | `/api/status` | Conexión, firmware, licencia, modo |
+| GET | `/api/session` | `authenticated`, `loopback` y `readOnly` |
+| GET | `/api/fields` | Metadatos de los campos de ajustes |
 | GET | `/api/settings` | Ajustes + metadatos de campos |
 | POST | `/api/settings` | `{ field, index?, value }` (nombre o ID) |
 | POST | `/api/settings/apply` | Aplica un bloque o perfil |
-| GET | `/api/state` | Última posición/torque |
+| GET | `/api/state` | Última posición/torque y ejes del joystick |
 | POST | `/api/safety/disable-forces` | Desactiva la fuerza y guarda/reinicia (solo si `save` está permitido) |
 | POST | `/api/command` | `reset-center`, `save`, `reboot`, `dfu` |
 | GET/POST | `/api/profiles` | Lista / crea |
 | POST | `/api/profiles/apply` | Aplica `{ id }` |
 | DELETE | `/api/profiles/:id` | Borra |
 | GET/POST | `/api/profiles/export` · `/import` | Exporta / importa JSON |
-| GET/POST | `/api/config` | Configuración pública / solo lectura |
+| GET/POST | `/api/config` | Configuración pública: solo lectura, comandos y autostart (Rust) |
 | GET | `/api/token` | Solo localhost |
 | POST | `/api/token/regenerate` | Solo localhost |
 | GET | `/api/qr` · `/api/qr/url` | Solo localhost |
@@ -266,9 +307,19 @@ Errores: `400` JSON inválido, `401` token, `403` prohibido/solo lectura,
   "stateHz": 20,
   "logLevel": "info",
   "mock": false,
-  "conflictProcesses": ["PitHouse.exe", "Pit House.exe", "FFBeast Pit House.exe"]
+  "autostart": false,
+  "conflictProcesses": [
+    "PitHouse.exe",
+    "Pit House.exe",
+    "FFBeast Pit House.exe",
+    "FFBeastPitHouse.exe"
+  ]
 }
 ```
+
+`autostart` lo gestionan la bandeja, **Ajustes → Seguridad** y los argumentos
+`--install-autostart` / `--uninstall-autostart` del hub Rust. El hub Node usa
+la tarea programada de `scripts\install-autostart.ps1`.
 
 `reboot` y `dfu` están desactivados a propósito. Para habilitarlos, edita el
 archivo con el hub cerrado y reinicia.
@@ -304,10 +355,11 @@ archivo con el hub cerrado y reinicia.
 ## Tests
 
 ```bash
-npm test
+npm test                    # hub Node (54 pruebas)
+cd hub-rs && cargo test     # hub Rust (11 pruebas)
 ```
 
-Cubre:
+El suite del hub Node cubre:
 
 - Vectores dorados del códec (`A3 14 05 00 84 03` para `MotionRange=900`).
 - Decodificación de estado, Effects, Hardware, GPIO, ADC y licencia.
@@ -316,6 +368,9 @@ Cubre:
 - Auth, rate limit, perfiles, QR, WebSocket y modo solo lectura.
 - Desactivar fuerzas, bloqueo de escrituras en solo lectura y `readOnly` local.
 - Detección de procesos en conflicto y descarga de diagnóstico sin token.
+
+El hub Rust repite los vectores del códec y los roundtrips de Effects, Hardware,
+GPIO, ADC y licencia, y añade la decodificación de reportes reales del volante.
 
 ## Problemas frecuentes
 
@@ -328,6 +383,8 @@ Cubre:
 | El puerto 47100 está ocupado | Cierra otra instancia o cambia `port` en `config.json` |
 | Los cambios no se aplican | Cierra Pit House: dos procesos no deben escribir a la vez |
 | No aparece el QR | Es una ruta de solo localhost: ábrela desde el PC |
+| Cerrar la pestaña no detiene el hub | Es intencional: usa **Salir** en la bandeja del sistema |
+| Abrir el `.exe` no inicia otra copia | Hay una sola instancia: el acceso directo abre la UI del hub que ya está en la bandeja |
 | Windows SmartScreen al distribuir | Firma el ejecutable o documenta «Más información → Ejecutar» |
 
 No uses **Zadig/libusb** con el volante: sustituye el driver HID y deja de
@@ -362,7 +419,7 @@ detectarse.
 |---|---|
 | M4 | ✅ Pines, Botones, Ejes y Monitor |
 | M5 | ✅ Bandeja, instalador por usuario, regla de firewall automática |
-| M6 | Pruebas con volante real, dynamic dampening y estabilidad USB |
+| M6 | 🔶 Dynamic dampening ✅; quedan pruebas prolongadas de estabilidad USB con hardware real |
 | M7 | ✅ Hub en Rust, `rust-embed`, bandeja, autostart e instalador; quedan firma y auto-update |
 
 La migración a Rust solo afecta a `hub/`: la API y la PWA no cambian.
