@@ -433,4 +433,3 @@ La migración a Rust solo afecta a `hub/`: la API y la PWA no cambian.
 - El protocolo se ha implementado a partir de la documentación oficial y de
   `ffbeast-wheel-api-lib` (publicada para software de terceros).
 - No se incluye ni se modifica firmware, ni se usan logos de FFBeast.
-  AAAAAAAAAAAAAAAAAAAAAAAAAAA
