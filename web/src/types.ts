@@ -123,6 +123,20 @@ export interface LiveState {
   axes?: JoystickAxes | null;
 }
 
+export interface DeviceHealth {
+  degraded: boolean;
+  consecutiveFailures: number;
+  lastError: string | null;
+  lastErrorAt: number | null;
+  connections: number;
+}
+
+export interface ConflictInfo {
+  active: boolean;
+  process: string | null;
+  checkedAt: number | null;
+}
+
 export interface HubStatus {
   connected: boolean;
   mock: boolean;
@@ -134,6 +148,8 @@ export interface HubStatus {
   path: string | null;
   position: number | null;
   torque: number | null;
+  health?: DeviceHealth;
+  conflict?: ConflictInfo;
 }
 
 export interface Profile {
@@ -151,6 +167,8 @@ export interface PublicConfig {
   allowDfuCommand: boolean;
   stateHz: number;
   mock: boolean;
+  /** Presente solo en el hub Rust (arranque con Windows). */
+  autostart?: boolean;
 }
 
 export interface SessionInfo {
@@ -179,4 +197,6 @@ export interface Diagnostics {
   dataDir: string;
   configPath: string;
   hid: Array<{ path: string; product?: string; vendorId: number; productId: number }>;
+  health?: DeviceHealth;
+  conflict?: ConflictInfo;
 }

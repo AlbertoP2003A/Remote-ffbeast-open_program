@@ -1,6 +1,6 @@
 {
   "name": "ffbeast-remote",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Control remoto para el volante FFBeast: hub HID en el PC + PWA para PC y movil",
@@ -22,7 +22,8 @@
     "start:mock": "cross-env FFBEAST_MOCK=1 node hub/dist/index.js",
     "test": "npm run test -w @ffbeast/hub",
     "typecheck": "npm run typecheck -w @ffbeast/hub && npm run typecheck -w @ffbeast/web",
-    "icons": "node scripts/gen-icons.mjs"
+    "icons": "node scripts/gen-icons.mjs",
+    "installer": "powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

@@ -1,6 +1,7 @@
 import React from "react";
 import { GroupFields } from "../components/GroupFields";
 import { AdvancedSection } from "../components/controls";
+import { SafetyNotice } from "../components/SafetyNotice";
 import { Banner, Card, PageHeader } from "../components/ui";
 
 export function Hardware(): React.ReactElement {
@@ -16,6 +17,7 @@ export function Hardware(): React.ReactElement {
         volante libre y sujeto, y prueba primero con valores bajos. La fuerza y el GPIO
         se aplican tras guardar y reiniciar; la app lo hará automáticamente al cambiarlos.
       </Banner>
+      <SafetyNotice />
 
       <Card title="Básicos">
         <GroupFields group="hardware" />

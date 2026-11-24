@@ -1,6 +1,7 @@
 import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { strToU8, zipSync } from "fflate";
 import QRCode from "qrcode";
 import { FIELDS } from "../hid/fields.js";
 import type { AppConfig, DeviceSettings } from "../hid/types.js";
@@ -13,8 +14,10 @@ import { VERSION, appDataDir, configPath, newToken, saveConfig } from "../config
 import type { Auth } from "./auth.js";
 import { RateLimiter } from "./auth.js";
 import type { ProfileStore } from "../domain/profiles.js";
+import type { ConflictMonitor } from "../domain/conflict.js";
 import { lanAddresses, mobileUrl, primaryLanAddress } from "./net.js";
 import { serveStatic } from "./static.js";
+import { SECURITY_HEADERS } from "./headers.js";
 import { WsHub } from "./ws.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -26,6 +29,7 @@ export interface ServerDeps {
   device: WheelDevice;
   joystick: JoystickLike;
   profiles: ProfileStore;
+  conflict: ConflictMonitor;
   log: Logger;
   webRoot: string;
   startedAt: number;
@@ -45,6 +49,7 @@ export function createHubServer(deps: ServerDeps): HubServer {
     auth: deps.auth,
     device: deps.device,
     joystick: deps.joystick,
+    conflict: deps.conflict,
     log: deps.log.child("ws"),
     config: deps.config,
   });
@@ -111,7 +116,7 @@ export function createHubServer(deps: ServerDeps): HubServer {
 
     // ------------------------------------------------------------- estado
     if (method === "GET" && path === "/api/status") {
-      sendJson(res, 200, { status: device.status() });
+      sendJson(res, 200, { status: statusPayload() });
       return;
     }
 
@@ -188,6 +193,29 @@ export function createHubServer(deps: ServerDeps): HubServer {
       }
       await device.command(body.name as CommandName);
       sendJson(res, 202, { ok: true, name: body.name });
+      return;
+    }
+
+    // ------------------------------------------------------------ seguridad
+    // Desactivar la fuerza no es instantaneo: el firmware solo aplica
+    // forceEnabled tras guardar y reiniciar. Se deja en una ruta propia para
+    // que la UI lo trate como una accion de seguridad y no como un ajuste mas.
+    if (method === "POST" && path === "/api/safety/disable-forces") {
+      if (config.readOnly) {
+        throw new HttpError(403, "Hub en modo solo lectura", "read_only");
+      }
+      if (!config.allowSaveCommand) {
+        throw new HttpError(
+          403,
+          "El comando guardar esta desactivado: no se puede persistir el cambio",
+          "command_disabled",
+        );
+      }
+      if (!device.connected) {
+        throw new HttpError(409, "Volante desconectado", "wheel_disconnected");
+      }
+      const settings = await device.disableForces();
+      sendJson(res, 202, { ok: true, restarting: true, settings });
       return;
     }
 
@@ -268,7 +296,18 @@ export function createHubServer(deps: ServerDeps): HubServer {
     if (method === "POST" && path === "/api/config") {
       const body = await readJson(req);
       if (!isRecord(body)) throw new HttpError(400, "Cuerpo inválido", "invalid_body");
-      if (typeof body.readOnly === "boolean") config.readOnly = body.readOnly;
+      if (typeof body.readOnly === "boolean") {
+        // Activar el bloqueo se permite desde cualquier dispositivo; quitarlo
+        // solo desde el PC. Asi el movil no puede deshacer un modo carrera.
+        if (!canDisableReadOnly(loopback, config.readOnly, body.readOnly)) {
+          throw new HttpError(
+            403,
+            "Solo el PC puede desactivar el modo solo lectura",
+            "loopback_only",
+          );
+        }
+        config.readOnly = body.readOnly;
+      }
       if (loopback && typeof body.allowSaveCommand === "boolean") {
         config.allowSaveCommand = body.allowSaveCommand;
       }
@@ -309,6 +348,7 @@ export function createHubServer(deps: ServerDeps): HubServer {
         "Content-Type": "image/png",
         "Content-Length": String(png.length),
         "Cache-Control": "no-store",
+        ...SECURITY_HEADERS,
       });
       res.end(png);
       return;
@@ -334,26 +374,70 @@ export function createHubServer(deps: ServerDeps): HubServer {
     }
 
     if (method === "GET" && path === "/api/diagnostics") {
-      sendJson(res, 200, {
-        version: VERSION,
-        api: 1,
-        uptimeSeconds: Math.round((Date.now() - deps.startedAt) / 1000),
-        port: config.port,
-        readOnly: config.readOnly,
-        mock: config.mock,
-        connected: device.connected,
-        firmware: device.status().firmware,
-        license: device.getLicense(),
-        joystickConnected: Boolean(deps.joystick.getAxes()),
-        lan: lanAddresses(),
-        dataDir: appDataDir(),
-        configPath: configPath(),
-        hid: safeList(device),
+      sendJson(res, 200, diagnosticsPayload());
+      return;
+    }
+
+    if (method === "GET" && path === "/api/diagnostics/download") {
+      if (!loopback) throw new HttpError(403, "Solo desde el PC", "loopback_only");
+      const diagnostics = diagnosticsPayload();
+      const redactedConfig = { ...config, token: "[redacted]" };
+      const logText = deps.log
+        .recentLines(1000)
+        .join("\n")
+        .replace(/([?&]t=)[^&\s]+/g, "$1[redacted]");
+      const zip = zipSync({
+        "diagnostics.json": strToU8(JSON.stringify(diagnostics, null, 2)),
+        "config.redacted.json": strToU8(
+          JSON.stringify(redactedConfig, null, 2),
+        ),
+        "hub.log": strToU8(logText),
+        "LEEME.txt": strToU8(
+          "Diagnóstico de FFBeast Remote.\n" +
+            "Incluye diagnostics.json, config.redacted.json y hub.log.\n" +
+            "El token de emparejamiento está redactado.\n",
+        ),
       });
+      res.writeHead(200, {
+        "Content-Type": "application/zip",
+        "Content-Length": String(zip.length),
+        "Content-Disposition": 'attachment; filename="ffbeast-diagnostics.zip"',
+        "Cache-Control": "no-store",
+        ...SECURITY_HEADERS,
+      });
+      res.end(Buffer.from(zip));
       return;
     }
 
     throw new HttpError(404, "Ruta no encontrada", "not_found");
+  }
+
+  function statusPayload(): unknown {
+    return {
+      ...deps.device.status(),
+      conflict: deps.conflict.current(),
+    };
+  }
+
+  function diagnosticsPayload(): unknown {
+    return {
+      version: VERSION,
+      api: 1,
+      uptimeSeconds: Math.round((Date.now() - deps.startedAt) / 1000),
+      port: deps.config.port,
+      readOnly: deps.config.readOnly,
+      mock: deps.config.mock,
+      connected: deps.device.connected,
+      firmware: deps.device.status().firmware,
+      license: deps.device.getLicense(),
+      health: deps.device.health(),
+      conflict: deps.conflict.current(),
+      joystickConnected: Boolean(deps.joystick.getAxes()),
+      lan: lanAddresses(),
+      dataDir: appDataDir(),
+      configPath: configPath(),
+      hid: safeList(deps.device),
+    };
   }
 
   function listen(port = deps.config.port, host = "0.0.0.0"): Promise<number> {
@@ -395,6 +479,19 @@ export function createHubServer(deps: ServerDeps): HubServer {
 // Utilidades
 // ---------------------------------------------------------------------------
 
+/**
+ * Activar el bloqueo se permite desde cualquier cliente; desactivarlo solo
+ * desde el PC. Evita que un movil emparejado deshaga el modo carrera.
+ */
+export function canDisableReadOnly(
+  loopback: boolean,
+  currentReadOnly: boolean,
+  nextReadOnly: boolean,
+): boolean {
+  if (!currentReadOnly || nextReadOnly) return true;
+  return loopback;
+}
+
 function isApiPath(path: string): boolean {
   return path === "/api" || path.startsWith("/api/") || path.startsWith("/api/v1");
 }
@@ -423,6 +520,7 @@ function sendJson(res: ServerResponse, status: number, value: unknown): void {
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": String(Buffer.byteLength(body)),
     "Cache-Control": "no-store",
+    ...SECURITY_HEADERS,
   });
   res.end(body);
 }

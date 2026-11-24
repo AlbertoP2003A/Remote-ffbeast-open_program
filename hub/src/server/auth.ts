@@ -59,10 +59,11 @@ export class Auth {
 
   isLoopback(req: IncomingMessage): boolean {
     const address = req.socket.remoteAddress ?? "";
+    // Todo 127.0.0.0/8 es loopback, no solo 127.0.0.1.
     return (
-      address === "127.0.0.1" ||
       address === "::1" ||
-      address === "::ffff:127.0.0.1"
+      address.startsWith("127.") ||
+      address.startsWith("::ffff:127.")
     );
   }
 }

@@ -4,6 +4,7 @@ import { useHub } from "../hub";
 import { Icon, type IconName } from "./Icons";
 import { Badge, Banner, Button } from "./ui";
 import { ToastHost } from "./ToastHost";
+import { displayVersion } from "../version";
 
 interface NavItem {
   to: string;
@@ -68,6 +69,35 @@ function ConnectionStrip(): React.ReactElement | null {
     );
   }
 
+  if (status?.health?.degraded) {
+    banners.push(
+      <Banner
+        key="health"
+        tone="danger"
+        icon="alert"
+        title="Volante inestable"
+        action={
+          <Button size="sm" variant="ghost" icon="refresh" onClick={() => void refreshAll()}>
+            Releer ajustes
+          </Button>
+        }
+      >
+        {status.health.consecutiveFailures} fallos seguidos de lectura/escritura.
+        {status.health.lastError ? ` Último error: ${status.health.lastError}` : ""}
+        {" "}Las escrituras están bloqueadas hasta releer.
+      </Banner>,
+    );
+  }
+
+  if (status?.conflict?.active) {
+    banners.push(
+      <Banner key="conflict" tone="danger" icon="alert" title="Pit House abierto">
+        Se ha detectado {status.conflict.process}. Cierra Pit House o este hub
+        para evitar que dos programas escriban en el volante a la vez.
+      </Banner>,
+    );
+  }
+
   if (status?.readOnly) {
     banners.push(
       <Banner key="readonly" tone="info" icon="check" title="Modo solo lectura">
@@ -89,7 +119,7 @@ function ConnectionStrip(): React.ReactElement | null {
 }
 
 export function Layout({ children }: { children: React.ReactNode }): React.ReactElement {
-  const { status } = useHub();
+  const { status, settings } = useHub();
   const location = useLocation();
 
   return (
@@ -122,7 +152,7 @@ export function Layout({ children }: { children: React.ReactNode }): React.React
 
         <div className="sidebar-foot">
           <ConnectionBadge />
-          <span className="version">v{status?.version ?? "0.1.0"}</span>
+          <span className="version">v{displayVersion(status?.version)}</span>
         </div>
       </aside>
 
@@ -133,6 +163,11 @@ export function Layout({ children }: { children: React.ReactNode }): React.React
             <span>FFBeast Remote</span>
           </div>
           <div className="topbar-status">
+            {settings && (
+              <Badge tone={settings.hardware.forceEnabled ? "accent" : "neutral"} dot>
+                Fuerza {settings.hardware.forceEnabled ? "ON" : "OFF"}
+              </Badge>
+            )}
             {status?.firmware && <Badge tone="neutral">FW {status.firmware}</Badge>}
             {status?.license && (
               <Badge tone={status.license.isRegistered ? "ok" : "neutral"}>

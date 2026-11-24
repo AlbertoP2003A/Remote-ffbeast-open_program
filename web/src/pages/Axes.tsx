@@ -43,10 +43,8 @@ function synthetic(base: FieldDef | undefined, name: string, label: string): Fie
 }
 
 export function Axes(): React.ReactElement {
-  const { settings, fields, status, setField } = useHub();
-  const readOnly = Boolean(status?.readOnly);
-  const connected = Boolean(status?.connected);
-  const locked = readOnly || !connected;
+  const { settings, fields, writable, setField } = useHub();
+  const locked = !writable;
 
   const base = (name: string): FieldDef | undefined =>
     fields.find((item) => item.name === name);

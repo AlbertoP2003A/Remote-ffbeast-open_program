@@ -14,7 +14,7 @@ function nextMode(mode: number): number {
 }
 
 export function Buttons(): React.ReactElement {
-  const { settings, status, applySettings } = useHub();
+  const { settings, writable, applySettings } = useHub();
   const [draft, setDraft] = useState<GpioSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [bulkMode, setBulkMode] = useState(1);
@@ -23,9 +23,7 @@ export function Buttons(): React.ReactElement {
     if (settings) setDraft(structuredClone(settings.gpio));
   }, [settings]);
 
-  const readOnly = Boolean(status?.readOnly);
-  const connected = Boolean(status?.connected);
-  const locked = readOnly || !connected;
+  const locked = !writable;
 
   const changes = useMemo(() => {
     if (!draft || !settings) return 0;

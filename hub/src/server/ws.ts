@@ -8,11 +8,13 @@ import type { Logger } from "../log.js";
 import type { AppConfig } from "../hid/types.js";
 import { VERSION } from "../config.js";
 import { FIELDS } from "../hid/fields.js";
+import type { ConflictMonitor } from "../domain/conflict.js";
 
 interface WsDeps {
   auth: Auth;
   device: WheelDevice;
   joystick: JoystickLike;
+  conflict: ConflictMonitor;
   log: Logger;
   config: AppConfig;
 }
@@ -24,10 +26,14 @@ export class WsHub {
   private stateTimer: NodeJS.Timeout | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private lastStateTimestamp = 0;
+  private unsubscribeConflict: (() => void) | null = null;
 
   constructor(private readonly deps: WsDeps) {
     this.wss.on("connection", (ws) => this.onConnection(ws));
     this.bindDevice();
+    this.unsubscribeConflict = deps.conflict.onChange(() =>
+      this.broadcast("status", this.statusPayload()),
+    );
     const interval = Math.max(50, Math.round(1000 / Math.max(1, deps.config.stateHz)));
     this.stateTimer = setInterval(() => this.pushState(), interval);
     this.stateTimer.unref?.();
@@ -60,6 +66,8 @@ export class WsHub {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.stateTimer = null;
     this.heartbeatTimer = null;
+    this.unsubscribeConflict?.();
+    this.unsubscribeConflict = null;
     for (const client of this.clients) {
       try {
         client.close(1001, "hub cerrado");
@@ -97,7 +105,7 @@ export class WsHub {
     });
 
     this.send(ws, "hello", { version: VERSION, api: 1 });
-    this.send(ws, "status", this.deps.device.status());
+    this.send(ws, "status", this.statusPayload());
     this.send(ws, "fields", { fields: FIELDS });
     const settings = this.deps.device.getSettings();
     if (settings) this.send(ws, "settings", { settings });
@@ -136,12 +144,21 @@ export class WsHub {
     }
   }
 
+  private statusPayload(): unknown {
+    return {
+      ...this.deps.device.status(),
+      conflict: this.deps.conflict.current(),
+    };
+  }
+
   private bindDevice(): void {
     const { device } = this.deps;
-    device.on("connected", () => this.broadcast("status", device.status()));
-    device.on("disconnected", () => this.broadcast("status", device.status()));
-    device.on("license", () => this.broadcast("status", device.status()));
+    device.on("connected", () => this.broadcast("status", this.statusPayload()));
+    device.on("disconnected", () => this.broadcast("status", this.statusPayload()));
+    device.on("license", () => this.broadcast("status", this.statusPayload()));
+    device.on("health", () => this.broadcast("status", this.statusPayload()));
     device.on("settings", (settings) => this.broadcast("settings", { settings }));
+    device.on("safety", (info: unknown) => this.broadcast("safety", info));
     device.on("error", (error: Error) => this.broadcast("error", { message: error.message }));
   }
 }

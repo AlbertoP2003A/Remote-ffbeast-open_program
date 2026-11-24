@@ -133,6 +133,22 @@ export interface LiveState {
   axes?: JoystickAxes | null;
 }
 
+export interface DeviceHealth {
+  /** true si hay demasiados fallos seguidos y conviene releer antes de escribir. */
+  degraded: boolean;
+  consecutiveFailures: number;
+  lastError: string | null;
+  lastErrorAt: number | null;
+  /** Numero de conexiones correctas desde que arranco el hub. */
+  connections: number;
+}
+
+export interface ConflictInfo {
+  active: boolean;
+  process: string | null;
+  checkedAt: number | null;
+}
+
 export interface HubStatus {
   connected: boolean;
   mock: boolean;
@@ -144,6 +160,9 @@ export interface HubStatus {
   path: string | null;
   position: number | null;
   torque: number | null;
+  health: DeviceHealth;
+  /** Programa conocido que tambien escribe en el volante (p. ej. Pit House). */
+  conflict?: ConflictInfo;
 }
 
 export interface Profile {
@@ -169,6 +188,8 @@ export interface AppConfig {
   stateHz: number;
   logLevel: LogLevel;
   mock: boolean;
+  /** Nombres de proceso que avisan de un posible conflicto (Pit House). */
+  conflictProcesses: string[];
 }
 
 export interface ApiErrorBody {

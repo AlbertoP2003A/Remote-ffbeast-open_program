@@ -1,12 +1,58 @@
 import React, { useRef, useState } from "react";
 import { useHub } from "../hub";
+import type { DeviceSettings, FieldDef, Profile } from "../types";
 import { Button, Card, EmptyState, PageHeader } from "../components/ui";
+
+interface ProfileChange {
+  label: string;
+  from: number;
+  to: number;
+  requiresReboot: boolean;
+}
+
+function fieldValue(
+  settings: DeviceSettings,
+  field: FieldDef,
+  index: number,
+): number | undefined {
+  if (field.group === "misc") return undefined;
+  const bag = settings[field.group] as unknown as Record<string, number | number[]>;
+  const value = bag[field.name];
+  if (Array.isArray(value)) return value[index];
+  return value;
+}
+
+/** Diff legible entre lo que hay en el volante y lo que aplicaria el perfil. */
+function profileChanges(
+  profile: Profile,
+  current: DeviceSettings,
+  fields: FieldDef[],
+): ProfileChange[] {
+  const changes: ProfileChange[] = [];
+  for (const field of fields) {
+    if (field.group === "misc") continue;
+    const count = field.arrayLength ?? 1;
+    for (let index = 0; index < count; index += 1) {
+      const from = fieldValue(current, field, index);
+      const to = fieldValue(profile.deviceSettings, field, index);
+      if (from === undefined || to === undefined || from === to) continue;
+      changes.push({
+        label: field.arrayLength ? `${field.label} ${index + 1}` : field.label,
+        from,
+        to,
+        requiresReboot: Boolean(field.requiresReboot),
+      });
+    }
+  }
+  return changes;
+}
 
 export function Profiles(): React.ReactElement {
   const {
     profiles,
     settings,
-    status,
+    fields,
+    writable,
     createProfile,
     applyProfile,
     deleteProfile,
@@ -41,16 +87,36 @@ export function Profiles(): React.ReactElement {
     }
   };
 
-  const apply = async (id: string, profileName: string): Promise<void> => {
-    if (
-      !window.confirm(
-        `¿Aplicar "${profileName}" al volante?\n\nSi el perfil incluye fuerza o GPIO, el volante se guardará y reiniciará.`,
-      )
-    ) {
+  const apply = async (profile: Profile): Promise<void> => {
+    if (!settings) {
+      notify("Conecta el volante antes de aplicar un perfil", "error");
       return;
     }
+    const changes = profileChanges(profile, settings, fields);
+    const preview = changes
+      .slice(0, 12)
+      .map(
+        (change) =>
+          `• ${change.label}: ${change.from} → ${change.to}${
+            change.requiresReboot ? " (requiere reiniciar)" : ""
+          }`,
+      )
+      .join("\n");
+    const extra =
+      changes.length > 12 ? `\n… y ${changes.length - 12} cambios más` : "";
+    const restart = changes.some((change) => change.requiresReboot);
+    const message =
+      changes.length === 0
+        ? `El perfil "${profile.name}" no cambia nada respecto al volante actual.\n\n¿Aplicar igualmente?`
+        : `¿Aplicar "${profile.name}"?\n\n${preview}${extra}\n\n${
+            restart
+              ? "El volante se guardará y reiniciará para aplicar los cambios marcados.\n\n"
+              : ""
+          }¿Continuar?`;
+
+    if (!window.confirm(message)) return;
     try {
-      await applyProfile(id);
+      await applyProfile(profile.id);
     } catch {
       // el toast ya informa
     }
@@ -69,8 +135,6 @@ export function Profiles(): React.ReactElement {
       event.target.value = "";
     }
   };
-
-  const readOnly = Boolean(status?.readOnly);
 
   return (
     <>
@@ -139,8 +203,8 @@ export function Profiles(): React.ReactElement {
                   <Button
                     size="sm"
                     icon="play"
-                    disabled={readOnly || !status?.connected}
-                    onClick={() => void apply(profile.id, profile.name)}
+                    disabled={!writable}
+                    onClick={() => void apply(profile)}
                   >
                     Aplicar
                   </Button>

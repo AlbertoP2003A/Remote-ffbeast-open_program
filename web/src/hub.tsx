@@ -43,6 +43,8 @@ export interface HubContextValue {
   authState: AuthState;
   bootError: string | null;
   wsState: WsState;
+  /** Volante conectado, sin solo lectura y con el canal en vivo abierto. */
+  writable: boolean;
   status: HubStatus | null;
   settings: DeviceSettings | null;
   fields: FieldDef[];
@@ -54,6 +56,7 @@ export interface HubContextValue {
   setField(name: string, value: number, index?: number): Promise<void>;
   applySettings(patch: Partial<DeviceSettings>): Promise<void>;
   runCommand(name: string): Promise<void>;
+  disableForces(): Promise<void>;
   refreshAll(): Promise<void>;
   refreshProfiles(): Promise<void>;
   createProfile(name: string): Promise<void>;
@@ -61,7 +64,11 @@ export interface HubContextValue {
   deleteProfile(id: string): Promise<void>;
   exportProfiles(): Promise<void>;
   importProfiles(data: unknown): Promise<void>;
-  updateConfig(patch: { readOnly?: boolean; allowSaveCommand?: boolean }): Promise<void>;
+  updateConfig(patch: {
+    readOnly?: boolean;
+    allowSaveCommand?: boolean;
+    autostart?: boolean;
+  }): Promise<void>;
   saveToken(token: string): Promise<void>;
   clearToken(): void;
   fetchToken(): Promise<string>;
@@ -94,6 +101,15 @@ export function HubProvider({ children }: { children: React.ReactNode }): React.
   const settingsRef = useRef<DeviceSettings | null>(null);
   const fieldsRef = useRef<FieldDef[]>([]);
   const noticeId = useRef(0);
+
+  // Si el WebSocket no esta abierto la UI tiene estado viejo: para seguridad
+  // no permitimos escribir hasta recuperar el canal en vivo.
+  const writable = Boolean(
+    status?.connected &&
+      !status.readOnly &&
+      wsState === "open" &&
+      !status.health?.degraded,
+  );
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -192,6 +208,11 @@ export function HubProvider({ children }: { children: React.ReactNode }): React.
             case "state":
               publishLive(message.data as LiveState);
               break;
+            case "safety": {
+              const info = message.data as { ok?: boolean; message?: string };
+              if (info.message) notify(info.message, info.ok ? "success" : "error");
+              break;
+            }
             case "error":
               notify((message.data as { message: string }).message, "error");
               break;
@@ -274,6 +295,19 @@ export function HubProvider({ children }: { children: React.ReactNode }): React.
     },
     [handleUnauthorized, notify],
   );
+
+  const disableForces = useCallback(async () => {
+    try {
+      const res = await apiPost<{ settings: DeviceSettings; restarting: boolean }>(
+        "/api/safety/disable-forces",
+      );
+      setSettings(res.settings);
+      notify("Fuerzas desactivadas. Guardando y reiniciando el volante…", "success");
+    } catch (error) {
+      if (!handleUnauthorized(error)) notify(errorMessage(error), "error");
+      throw error;
+    }
+  }, [handleUnauthorized, notify]);
 
   const applySettings = useCallback(
     async (patch: Partial<DeviceSettings>) => {
@@ -401,7 +435,11 @@ export function HubProvider({ children }: { children: React.ReactNode }): React.
   );
 
   const updateConfig = useCallback(
-    async (patch: { readOnly?: boolean; allowSaveCommand?: boolean }) => {
+    async (patch: {
+      readOnly?: boolean;
+      allowSaveCommand?: boolean;
+      autostart?: boolean;
+    }) => {
       try {
         const res = await apiPost<{ config: PublicConfig }>("/api/config", patch);
         setConfig(res.config);
@@ -447,6 +485,7 @@ export function HubProvider({ children }: { children: React.ReactNode }): React.
       authState,
       bootError,
       wsState,
+      writable,
       status,
       settings,
       fields,
@@ -457,6 +496,7 @@ export function HubProvider({ children }: { children: React.ReactNode }): React.
       setField,
       applySettings,
       runCommand,
+      disableForces,
       refreshAll,
       refreshProfiles,
       createProfile,
@@ -476,6 +516,7 @@ export function HubProvider({ children }: { children: React.ReactNode }): React.
       authState,
       bootError,
       wsState,
+      writable,
       status,
       settings,
       fields,
@@ -486,6 +527,7 @@ export function HubProvider({ children }: { children: React.ReactNode }): React.
       setField,
       applySettings,
       runCommand,
+      disableForces,
       refreshAll,
       refreshProfiles,
       createProfile,

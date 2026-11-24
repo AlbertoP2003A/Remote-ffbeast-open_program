@@ -11,6 +11,7 @@ import { MockFactory } from "./hid/mock.js";
 import { JoystickDevice, MockJoystick } from "./hid/joystick.js";
 import { WheelDevice } from "./hid/driver.js";
 import { ProfileStore } from "./domain/profiles.js";
+import { ConflictMonitor } from "./domain/conflict.js";
 import { Auth } from "./server/auth.js";
 import { createHubServer } from "./server/http.js";
 import { lanAddresses, mobileUrl } from "./server/net.js";
@@ -34,6 +35,11 @@ async function main(): Promise<void> {
     ? new MockJoystick()
     : new JoystickDevice(log.child("joystick"));
   const profiles = new ProfileStore(dataDir, log);
+  const conflict = new ConflictMonitor({
+    processes: config.conflictProcesses,
+    log: log.child("conflict"),
+  });
+  conflict.start();
   const auth = new Auth(config.token);
 
   device.on("connected", () => log.info("Volante conectado"));
@@ -54,6 +60,7 @@ async function main(): Promise<void> {
     device,
     joystick,
     profiles,
+    conflict,
     log: log.child("http"),
     webRoot,
     startedAt: Date.now(),
@@ -70,6 +77,7 @@ async function main(): Promise<void> {
     );
     await device.stop();
     joystick.stop();
+    conflict.stop();
     process.exit(1);
   }
 
@@ -87,6 +95,7 @@ async function main(): Promise<void> {
     log.info(`Cerrando hub (${reason})`);
     await device.stop();
     joystick.stop();
+    conflict.stop();
     await hub.close();
     process.exit(0);
   };

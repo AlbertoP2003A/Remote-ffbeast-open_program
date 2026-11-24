@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { HttpError } from "../errors.js";
+import { CONTENT_SECURITY_POLICY, SECURITY_HEADERS } from "./headers.js";
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -58,7 +59,7 @@ function sendFile(
     "Content-Type": MIME[ext] ?? "application/octet-stream",
     "Content-Length": String(stat.size),
     "Cache-Control": cache,
-    "X-Content-Type-Options": "nosniff",
+    ...SECURITY_HEADERS,
     ...extraHeaders,
   });
   if (req.method === "HEAD") {
@@ -75,7 +76,9 @@ function sendIndex(
   options: StaticOptions,
 ): void {
   const index = path.join(webRoot, "index.html");
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = {
+    "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+  };
   if (options.loopback && options.cookieToken) {
     headers["Set-Cookie"] =
       `ffbeast_token=${encodeURIComponent(options.cookieToken)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000`;

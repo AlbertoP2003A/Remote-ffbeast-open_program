@@ -110,6 +110,44 @@ export function apiGet<T>(path: string): Promise<T> {
   return request<T>(path);
 }
 
+/** Descarga binaria (diagnóstico ZIP) con el mismo token que la API. */
+export async function apiGetBlob(path: string): Promise<Blob> {
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      headers,
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(0, "No se puede conectar con el hub", "network_error");
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    let body: unknown = undefined;
+    if (text) {
+      try {
+        body = JSON.parse(text) as unknown;
+      } catch {
+        body = text;
+      }
+    }
+    const errorBody = body as ErrorBody | undefined;
+    throw new ApiError(
+      response.status,
+      errorBody?.error?.message ?? `Error HTTP ${response.status}`,
+      errorBody?.error?.code ?? "http_error",
+      errorBody?.error?.details,
+    );
+  }
+
+  return response.blob();
+}
+
 export function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return request<T>(path, {
     method: "POST",

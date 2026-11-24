@@ -56,7 +56,7 @@ export function GroupFields({
   group: "effects" | "hardware";
   onlyAdvanced?: boolean;
 }): React.ReactElement {
-  const { fields, settings, status } = useHub();
+  const { fields, settings, writable } = useHub();
   const commit = useCommitField();
 
   if (!settings) return <p className="muted">Sin datos del volante.</p>;
@@ -75,7 +75,7 @@ export function GroupFields({
             key={field.name}
             field={field}
             value={value}
-            disabled={Boolean(status?.readOnly)}
+            disabled={!writable}
             onCommit={(next) => commit(field, next)}
           />
         );
@@ -85,7 +85,7 @@ export function GroupFields({
 }
 
 export function SingleField({ name }: { name: string }): React.ReactElement | null {
-  const { fields, settings, status } = useHub();
+  const { fields, settings, writable } = useHub();
   const commit = useCommitField();
   const field = fields.find((item) => item.name === name);
   if (!field || !settings) return null;
@@ -95,7 +95,7 @@ export function SingleField({ name }: { name: string }): React.ReactElement | nu
     <FieldRow
       field={field}
       value={value}
-      disabled={Boolean(status?.readOnly)}
+      disabled={!writable}
       onCommit={(next) => commit(field, next)}
     />
   );

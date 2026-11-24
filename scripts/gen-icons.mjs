@@ -138,9 +138,66 @@ function draw(size) {
   return pixels;
 }
 
+function encodeIcoImage(size) {
+  const pixels = draw(size);
+  const xor = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const source = (y * size + x) * 4;
+      const target = ((size - 1 - y) * size + x) * 4;
+      xor[target] = pixels[source + 2]; // B
+      xor[target + 1] = pixels[source + 1]; // G
+      xor[target + 2] = pixels[source]; // R
+      xor[target + 3] = pixels[source + 3]; // A
+    }
+  }
+  const maskRow = Math.ceil(size / 32) * 4;
+  const mask = Buffer.alloc(maskRow * size);
+  const header = Buffer.alloc(40);
+  header.writeUInt32LE(40, 0);
+  header.writeInt32LE(size, 4);
+  header.writeInt32LE(size * 2, 8);
+  header.writeUInt16LE(1, 12);
+  header.writeUInt16LE(32, 14);
+  header.writeUInt32LE(0, 16);
+  header.writeUInt32LE(xor.length + mask.length, 20);
+  return Buffer.concat([header, xor, mask]);
+}
+
+function encodeIco(sizes) {
+  const entries = [];
+  const images = [];
+  let offset = 6 + sizes.length * 16;
+  for (const size of sizes) {
+    const data = encodeIcoImage(size);
+    const entry = Buffer.alloc(16);
+    entry[0] = size >= 256 ? 0 : size;
+    entry[1] = size >= 256 ? 0 : size;
+    entry[2] = 0;
+    entry[3] = 0;
+    entry.writeUInt16LE(1, 4);
+    entry.writeUInt16LE(32, 6);
+    entry.writeUInt32LE(data.length, 8);
+    entry.writeUInt32LE(offset, 12);
+    entries.push(entry);
+    images.push(data);
+    offset += data.length;
+  }
+  const directory = Buffer.alloc(6);
+  directory.writeUInt16LE(0, 0);
+  directory.writeUInt16LE(1, 2);
+  directory.writeUInt16LE(sizes.length, 4);
+  return Buffer.concat([directory, ...entries, ...images]);
+}
+
 fs.mkdirSync(OUT, { recursive: true });
 for (const size of [192, 512]) {
   const file = path.join(OUT, `icon-${size}.png`);
   fs.writeFileSync(file, encodePng(size, size, draw(size)));
   console.log(`generado ${path.relative(process.cwd(), file)}`);
 }
+
+const icoOut = path.resolve(process.cwd(), "hub-rs", "assets", "ffbeast.ico");
+fs.mkdirSync(path.dirname(icoOut), { recursive: true });
+fs.writeFileSync(icoOut, encodeIco([16, 24, 32, 48, 64, 128, 256]));
+console.log(`generado ${path.relative(process.cwd(), icoOut)}`);

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { FieldDef } from "../types";
+import { Icon, type IconName } from "./Icons";
 
 type ControlKind = "slider" | "number" | "toggle" | "select";
 
@@ -278,6 +279,141 @@ function Select({
         </option>
       ))}
     </select>
+  );
+}
+
+/**
+ * Boton de confirmacion por pulsacion mantenida. Evita que un toque accidental
+ * en el movil (o con guantes) dispare reset-center o desactive la fuerza.
+ */
+export function HoldButton({
+  children,
+  onConfirm,
+  duration = 1500,
+  variant = "default",
+  size = "md",
+  icon,
+  className,
+  disabled,
+  title,
+}: {
+  children: React.ReactNode;
+  onConfirm: () => void;
+  duration?: number;
+  variant?: "default" | "primary" | "ghost" | "danger";
+  size?: "sm" | "md" | "lg";
+  icon?: IconName;
+  className?: string;
+  disabled?: boolean;
+  title?: string;
+}): React.ReactElement {
+  const [progress, setProgress] = useState(0);
+  const [holding, setHolding] = useState(false);
+  const timer = useRef<number | null>(null);
+  const frame = useRef<number | null>(null);
+  const resetTimer = useRef<number | null>(null);
+  const startedAt = useRef(0);
+
+  const clearTimers = (): void => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    timer.current = null;
+    frame.current = null;
+  };
+
+  useEffect(
+    () => () => {
+      clearTimers();
+      if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    },
+    [],
+  );
+
+  const cancel = (): void => {
+    clearTimers();
+    if (resetTimer.current !== null) {
+      window.clearTimeout(resetTimer.current);
+      resetTimer.current = null;
+    }
+    setHolding(false);
+    setProgress(0);
+  };
+
+  const start = (): void => {
+    if (disabled || holding) return;
+    clearTimers();
+    if (resetTimer.current !== null) {
+      window.clearTimeout(resetTimer.current);
+      resetTimer.current = null;
+    }
+    setHolding(true);
+    startedAt.current = performance.now();
+    const tick = (): void => {
+      const ratio = Math.min(1, (performance.now() - startedAt.current) / duration);
+      setProgress(ratio);
+      if (ratio < 1) frame.current = requestAnimationFrame(tick);
+    };
+    frame.current = requestAnimationFrame(tick);
+    timer.current = window.setTimeout(() => {
+      clearTimers();
+      setHolding(false);
+      setProgress(1);
+      onConfirm();
+      resetTimer.current = window.setTimeout(() => setProgress(0), 400);
+    }, duration);
+  };
+
+  const label = typeof children === "string" ? children : undefined;
+  const seconds = (duration / 1000).toFixed(1).replace(".", ",");
+
+  return (
+    <button
+      type="button"
+      className={`btn btn-${variant} btn-${size} hold-btn${holding ? " is-holding" : ""}${className ? ` ${className}` : ""}`}
+      style={{ "--hold": `${progress * 100}%` } as React.CSSProperties}
+      disabled={disabled}
+      title={title ?? `Mantén pulsado ${seconds} s para confirmar`}
+      aria-label={label ? `${label} (mantén pulsado ${seconds} s)` : undefined}
+      onPointerDown={(event) => {
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // el puntero no admite captura
+        }
+        start();
+      }}
+      onPointerUp={(event) => {
+        try {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        } catch {
+          // el puntero ya se liberó
+        }
+        cancel();
+      }}
+      onPointerCancel={() => cancel()}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          cancel();
+          return;
+        }
+        if ((event.key === " " || event.key === "Enter") && !event.repeat) {
+          event.preventDefault();
+          start();
+        }
+      }}
+      onKeyUp={(event) => {
+        if (event.key === " " || event.key === "Enter") {
+          event.preventDefault();
+          cancel();
+        }
+      }}
+      onBlur={() => cancel()}
+    >
+      {icon && <Icon name={icon} size={18} />}
+      {children && <span>{children}</span>}
+      <span className="hold-fill" aria-hidden="true" />
+    </button>
   );
 }
 

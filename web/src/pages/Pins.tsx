@@ -6,7 +6,7 @@ import { FieldRow } from "../components/controls";
 import { Badge, Banner, Card, EmptyState, PageHeader } from "../components/ui";
 
 export function Pins(): React.ReactElement {
-  const { settings, fields, status, applySettings } = useHub();
+  const { settings, fields, writable, applySettings } = useHub();
   const [draft, setDraft] = useState<GpioSettings | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -24,9 +24,7 @@ export function Pins(): React.ReactElement {
   const spiDelayField = field("spiLatchDelay");
   const spiClkField = field("spiClkPulseLength");
 
-  const readOnly = Boolean(status?.readOnly);
-  const connected = Boolean(status?.connected);
-  const locked = readOnly || !connected;
+  const locked = !writable;
 
   const changes = useMemo(() => {
     if (!draft || !settings) return 0;

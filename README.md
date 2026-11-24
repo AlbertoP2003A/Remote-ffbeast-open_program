@@ -26,13 +26,14 @@ dispositivo simulado:
 - Token, QR, rate limit, modo solo lectura y registro.
 - UI responsive con estética oscura tipo Pit House.
 
-Pendiente (fases siguientes): bandeja e instalador (M5), pulido de hardware y
-dynamic dampening (M6), distribución single-exe (M7).
+Pendiente (fases siguientes): pulido de hardware y dynamic dampening (M6),
+firma de código y auto-actualización.
 
 ## Requisitos
 
 - Windows 10/11.
-- **Node.js 22 LTS** (o 24 LTS). Node 20 ya no tiene soporte.
+- **Node.js 22 LTS** (o 24 LTS) solo para el hub Node y el desarrollo. El
+  instalador y el paquete portable no lo necesitan. Node 20 ya no tiene soporte.
 - El volante conectado por USB al PC.
 - Para el móvil: misma red WiFi que el PC.
 
@@ -54,6 +55,41 @@ aleatorio. Al arrancar verás en la consola:
 ```
 
 y un **QR** para escanear con el móvil.
+
+### Instalador para Windows (recomendado)
+
+El hub Rust se distribuye como instalador **por usuario**, sin administrador:
+
+```
+dist\FFBeastRemote-Setup-1.0.0.exe
+```
+
+- Instala en `%LOCALAPPDATA%\FFBeast Remote` y crea accesos directos en Inicio
+  (y en el escritorio, opcional).
+- **Iniciar con Windows** opcional: desmarcado en una instalación nueva y se
+  conserva tal cual al actualizar.
+- **Firewall** opcional para el móvil: crea una regla por programa para
+  `ffbeast-hub.exe` en redes privadas. Pide UAC una sola vez.
+- El desinstalador cierra el hub, quita su autostart y la regla de firewall, y
+  pregunta si quieres conservar los perfiles y la configuración.
+- No está firmado: SmartScreen mostrará un aviso. Usa **Más información →
+  Ejecutar de todas formas**. La firma llegará cuando haya certificado.
+
+Para generarlo (web + Rust + Inno Setup 6):
+
+```powershell
+npm run installer
+# o: powershell -ExecutionPolicy Bypass -File scripts\build-installer.ps1
+```
+
+El instalador y su SHA-256 quedan en `dist\`.
+
+### Paquete portable
+
+Alternativa sin instalación: `hub-rs\target\ffbeast-hub-1.0.0-win64.zip`
+contiene `ffbeast-hub.exe`, `start.cmd`, `firewall.ps1`, `README.txt` y
+`LICENSE`. El `.exe` es autónomo (PWA embebida) y comparte configuración con el
+instalador.
 
 ### Sin volante (modo simulado)
 
@@ -133,6 +169,12 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall-autostart.ps1
 La tarea ejecuta `scripts\start-hidden.vbs`, que arranca
 `node hub\dist\index.js` de forma oculta.
 
+El **hub Rust** no usa esta tarea: guarda el autostart en
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` (sin admin) y se controla
+desde la bandeja, desde **Ajustes → Seguridad** o con
+`ffbeast-hub.exe --install-autostart` / `--uninstall-autostart`. El instalador
+también elimina la tarea antigua `FFBeastRemote` del hub Node si existe.
+
 ## Estructura
 
 ```
@@ -152,14 +194,16 @@ ffbeast-remote/
 │  │  │  └─ driver.ts    # WheelDevice: reconexión, read-back, comandos
 │  │  ├─ domain/
 │  │  │  ├─ profiles.ts
-│  │  │  └─ compatibility.ts
+│  │  │  ├─ compatibility.ts
+│  │  │  └─ conflict.ts  # aviso si Pit House está abierto
 │  │  └─ server/
 │  │     ├─ http.ts      # API + estáticos
 │  │     ├─ ws.ts        # estado en vivo
 │  │     ├─ auth.ts      # token timing-safe + rate limit
+│  │     ├─ headers.ts   # CSP y cabeceras de seguridad
 │  │     ├─ net.ts       # elección de IP de LAN
 │  │     └─ static.ts    # PWA con fallback SPA
-│  └─ test/              # códec, auth y API (42 tests)
+│  └─ test/              # códec, auth, seguridad y API (54 tests)
 ├─ web/                  # PWA React + Vite
 │  ├─ src/pages/         # Dashboard, Efectos, Hardware, Pines, Botones, Ejes,
 │  │                     # Monitor, Perfiles, Ajustes
@@ -167,7 +211,10 @@ ffbeast-remote/
 │  ├─ src/hub.tsx        # contexto: API + WebSocket + acciones
 │  ├─ src/live.ts        # estado en vivo aislado de React
 │  └─ public/            # manifest e iconos
-└─ scripts/              # firewall, autostart, iconos
+├─ hub-rs/               # hub Rust + PWA embebida (exe autónomo)
+├─ installer/            # script de Inno Setup 6 y firewall del instalador
+├─ dist/                 # instalador compilado y su SHA-256
+└─ scripts/              # firewall, autostart, iconos, build-installer
 ```
 
 ## API
@@ -184,6 +231,7 @@ Base: `http://<host>:47100`. Autenticación por `Authorization: Bearer <token>`,
 | POST | `/api/settings` | `{ field, index?, value }` (nombre o ID) |
 | POST | `/api/settings/apply` | Aplica un bloque o perfil |
 | GET | `/api/state` | Última posición/torque |
+| POST | `/api/safety/disable-forces` | Desactiva la fuerza y guarda/reinicia (solo si `save` está permitido) |
 | POST | `/api/command` | `reset-center`, `save`, `reboot`, `dfu` |
 | GET/POST | `/api/profiles` | Lista / crea |
 | POST | `/api/profiles/apply` | Aplica `{ id }` |
@@ -194,8 +242,9 @@ Base: `http://<host>:47100`. Autenticación por `Authorization: Bearer <token>`,
 | POST | `/api/token/regenerate` | Solo localhost |
 | GET | `/api/qr` · `/api/qr/url` | Solo localhost |
 | GET | `/api/logs` | Solo localhost |
-| GET | `/api/diagnostics` | Estado, red, HID, rutas |
-| WS | `/api/ws?t=` | `hello`, `status`, `settings`, `state`, `error` |
+| GET | `/api/diagnostics` | Estado, salud, conflicto, red, HID, rutas |
+| GET | `/api/diagnostics/download` | ZIP con diagnóstico, config redactada y log (solo localhost) |
+| WS | `/api/ws?t=` | `hello`, `status`, `settings`, `state`, `safety`, `error` |
 
 Errores: `400` JSON inválido, `401` token, `403` prohibido/solo lectura,
 `404` no encontrado, `409` desconectado o read-back fallido, `413` payload,
@@ -216,7 +265,8 @@ Errores: `400` JSON inválido, `401` token, `403` prohibido/solo lectura,
   "allowDfuCommand": false,
   "stateHz": 20,
   "logLevel": "info",
-  "mock": false
+  "mock": false,
+  "conflictProcesses": ["PitHouse.exe", "Pit House.exe", "FFBeast Pit House.exe"]
 }
 ```
 
@@ -228,7 +278,25 @@ archivo con el hub cerrado y reinicia.
 - Token obligatorio en toda la API (salvo `/api/health`).
 - Comparación en tiempo constante mediante SHA-256.
 - Rate limit de 20 req/s con ráfaga de 40 por IP.
-- Solo lectura global para usar el móvil como dashboard en carrera.
+- Solo lectura global para usar el móvil como dashboard en carrera. Se puede
+  **activar** desde cualquier dispositivo, pero **desactivar solo desde el PC**.
+- Reset de centro y desactivar fuerzas piden mantener pulsado 1,5 s en la UI,
+  para evitar toques accidentales con guantes.
+- Desactivar fuerzas guarda y reinicia (~2 s): no es un corte instantáneo. Para
+  una emergencia real, usa el interruptor físico del volante o desconecta el USB.
+- Si el WebSocket no está abierto, la UI bloquea las escrituras para no actuar
+  sobre un estado viejo.
+- Si hay **3 fallos seguidos** de lectura/escritura, el hub marca el volante como
+  inestable y bloquea escrituras hasta que se relean los ajustes con éxito.
+- Aviso si se detecta **Pit House abierto** (`conflictProcesses` configurable),
+  para evitar que dos programas escriban en el volante a la vez.
+- Avisos no bloqueantes si potencia, frenado o efectos superan el 80 %, o si hay
+  torque de depuración activo. Se puede seguir ajustando, pero con precaución.
+- Aplicar un perfil muestra antes el diff de campos y marca los que reinician.
+- **Diagnóstico ZIP** desde Ajustes (solo PC) con `diagnostics.json`,
+  `config.redacted.json` y `hub.log`; el token se redacta.
+- Cabeceras CSP, `X-Frame-Options`, `Referrer-Policy` y `Permissions-Policy` en
+  la UI y la API.
 - `reboot`/`dfu` desactivados; `save` configurable.
 - El token se regenera desde el PC e invalida los móviles emparejados.
 - Sin telemetría ni acceso a Internet. Todo queda en la LAN.
@@ -244,8 +312,10 @@ Cubre:
 - Vectores dorados del códec (`A3 14 05 00 84 03` para `MotionRange=900`).
 - Decodificación de estado, Effects, Hardware, GPIO, ADC y licencia.
 - Validación de rangos, índices y compatibilidad.
-- Read-back fallido (409).
+- Read-back fallido (409) y watchdog de salud tras 3 fallos.
 - Auth, rate limit, perfiles, QR, WebSocket y modo solo lectura.
+- Desactivar fuerzas, bloqueo de escrituras en solo lectura y `readOnly` local.
+- Detección de procesos en conflicto y descarga de diagnóstico sin token.
 
 ## Problemas frecuentes
 
@@ -280,15 +350,20 @@ detectarse.
   devuelve el valor viejo hasta el reinicio) y la UI encadena el guardado+reinicio
   automáticamente al cambiarlos o al aplicar un perfil que los incluya.
 - **PWA sobre HTTP**: sin service worker; ver la nota de emparejamiento.
+- **Rust**: `hub-rs/` sirve la PWA y la API completas desde un único `.exe`
+  (~15 MB, sin Node ni consola), con HID real, escrituras, perfiles, QR,
+  diagnóstico ZIP, watchdog, detección de Pit House, bandeja, autostart,
+  recursos de versión/icono e instalador por usuario. Quedan firma de código y
+  auto-update. El hub Node sigue disponible como referencia y fallback.
 
 ## Hoja de ruta
 
 | Fase | Contenido |
 |---|---|
 | M4 | ✅ Pines, Botones, Ejes y Monitor |
-| M5 | Bandeja, instalador del arranque, regla de firewall automática |
+| M5 | ✅ Bandeja, instalador por usuario, regla de firewall automática |
 | M6 | Pruebas con volante real, dynamic dampening y estabilidad USB |
-| M7 | Hub en Rust + `rust-embed` + instalador firmado (un único `.exe`) |
+| M7 | ✅ Hub en Rust, `rust-embed`, bandeja, autostart e instalador; quedan firma y auto-update |
 
 La migración a Rust solo afecta a `hub/`: la API y la PWA no cambian.
 

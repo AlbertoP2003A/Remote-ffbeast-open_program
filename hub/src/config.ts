@@ -2,9 +2,10 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_CONFLICT_PROCESSES } from "./domain/conflict.js";
 import type { AppConfig, LogLevel } from "./hid/types.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "1.0.0";
 
 export function appDataDir(): string {
   if (process.env.FFBEAST_DATA_DIR) return path.resolve(process.env.FFBEAST_DATA_DIR);
@@ -34,6 +35,7 @@ function defaultConfig(): AppConfig {
     stateHz: 20,
     logLevel: "info",
     mock: false,
+    conflictProcesses: [...DEFAULT_CONFLICT_PROCESSES],
   };
 }
 

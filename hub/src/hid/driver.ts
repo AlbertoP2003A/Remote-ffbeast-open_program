@@ -20,6 +20,7 @@ import {
 } from "./fields.js";
 import type {
   AppConfig,
+  DeviceHealth,
   DeviceSettings,
   FieldDef,
   HubStatus,
@@ -69,6 +70,15 @@ export class WheelDevice extends EventEmitter {
   private live: LiveState | null = null;
   private path: string | null = null;
   private lastFindError: string | null = null;
+  /** La proxima lectura debe comprobar que la fuerza quedo desactivada. */
+  private pendingForceCheck = false;
+  /** Se activa al pedir la desactivacion y se traslada al soltar el HID. */
+  private pendingForceCheckRequested = false;
+
+  private consecutiveFailures = 0;
+  private lastError: string | null = null;
+  private lastErrorAt: number | null = null;
+  private connections = 0;
 
   constructor(private readonly options: WheelDeviceOptions) {
     super();
@@ -106,6 +116,16 @@ export class WheelDevice extends EventEmitter {
     this.drop("hub detenido");
   }
 
+  health(): DeviceHealth {
+    return {
+      degraded: this.consecutiveFailures >= 3,
+      consecutiveFailures: this.consecutiveFailures,
+      lastError: this.lastError,
+      lastErrorAt: this.lastErrorAt,
+      connections: this.connections,
+    };
+  }
+
   status(): HubStatus {
     const config = this.options.config;
     return {
@@ -119,6 +139,7 @@ export class WheelDevice extends EventEmitter {
       path: this.path,
       position: this.live?.position ?? null,
       torque: this.live?.torque ?? null,
+      health: this.health(),
     };
   }
 
@@ -196,29 +217,89 @@ export class WheelDevice extends EventEmitter {
   }
 
   command(name: CommandName): Promise<void> {
+    return this.enqueue(() => this.commandInternal(name));
+  }
+
+  /**
+   * Desactiva la fuerza y encadena guardar + reiniciar en una sola operacion.
+   * forceEnabled solo se aplica tras reiniciar, asi que no es un corte
+   * instantaneo: la UI debe explicarlo y ofrecer el interruptor fisico como
+   * alternativa para una emergencia real.
+   */
+  disableForces(): Promise<DeviceSettings> {
     return this.enqueue(async () => {
       const config = this.options.config;
       if (config.readOnly) {
         throw new HttpError(403, "Hub en modo solo lectura", "read_only");
       }
-      const allowed: Record<CommandName, boolean> = {
-        "reset-center": true,
-        save: config.allowSaveCommand,
-        reboot: config.allowRebootCommand,
-        dfu: config.allowDfuCommand,
-      };
-      if (!allowed[name]) {
-        throw new HttpError(403, `Comando desactivado: ${name}`, "command_disabled");
+      if (!config.allowSaveCommand) {
+        throw new HttpError(
+          403,
+          "El comando guardar esta desactivado: no se puede persistir el cambio",
+          "command_disabled",
+        );
       }
-      const transport = this.requireTransport();
-      transport.write(encodeCommand(name));
-      this.options.log.info(`Comando enviado: ${name}`);
-      // Guardar, reiniciar y DFU reinician el firmware: soltamos el HID y
-      // dejamos que el bucle de reconexion lo recupere.
-      if (name !== "reset-center") {
-        setTimeout(() => this.drop(`comando ${name}`), 300);
+      const settings = await this.writeSettingInternal(
+        "forceEnabled",
+        0,
+        0,
+        APPLY_DELAY_MS,
+      );
+      this.pendingForceCheckRequested = true;
+      try {
+        this.commandInternal("save");
+      } catch (error) {
+        this.pendingForceCheckRequested = false;
+        // Si no se pudo guardar, la UI no debe quedarse mostrando "fuerza OFF":
+        // releemos el estado real del volante antes de propagar el error.
+        try {
+          await this.refreshAllInternal();
+        } catch {
+          // sin lectura, el estado se resolvera al reconectar
+        }
+        throw error;
       }
+      return settings;
     });
+  }
+
+  private commandInternal(name: CommandName): void {
+    const config = this.options.config;
+    if (config.readOnly) {
+      throw new HttpError(403, "Hub en modo solo lectura", "read_only");
+    }
+    const allowed: Record<CommandName, boolean> = {
+      "reset-center": true,
+      save: config.allowSaveCommand,
+      reboot: config.allowRebootCommand,
+      dfu: config.allowDfuCommand,
+    };
+    if (!allowed[name]) {
+      throw new HttpError(403, `Comando desactivado: ${name}`, "command_disabled");
+    }
+    this.assertStable();
+    const transport = this.requireTransport();
+    try {
+      transport.write(encodeCommand(name));
+    } catch (error) {
+      this.noteFailure(error);
+      throw error;
+    }
+    this.noteSuccess();
+    this.options.log.info(`Comando enviado: ${name}`);
+    // Guardar, reiniciar y DFU reinician el firmware: soltamos el HID y
+    // dejamos que el bucle de reconexion lo recupere.
+    if (name !== "reset-center") {
+      setTimeout(() => {
+        // Solo comprobamos la fuerza cuando el reinicio ya se ha pedido y el
+        // HID se va a soltar; asi una lectura intermedia no da un falso aviso.
+        if (this.pendingForceCheckRequested) {
+          this.pendingForceCheck = true;
+          this.pendingForceCheckRequested = false;
+        }
+        this.drop(`comando ${name}`);
+      }, 300);
+    }
   }
 
   // ------------------------------------------------------------------ interno
@@ -230,6 +311,29 @@ export class WheelDevice extends EventEmitter {
       () => undefined,
     );
     return run;
+  }
+
+  private noteFailure(error: unknown): void {
+    this.consecutiveFailures += 1;
+    this.lastError = errorMessage(error);
+    this.lastErrorAt = Date.now();
+    this.emit("health", this.health());
+  }
+
+  private noteSuccess(): void {
+    if (this.consecutiveFailures === 0) return;
+    this.consecutiveFailures = 0;
+    this.emit("health", this.health());
+  }
+
+  private assertStable(): void {
+    if (this.consecutiveFailures >= 3) {
+      throw new HttpError(
+        409,
+        "Volante inestable: relee los ajustes antes de escribir",
+        "wheel_unstable",
+      );
+    }
   }
 
   private async tryConnect(): Promise<void> {
@@ -262,6 +366,7 @@ export class WheelDevice extends EventEmitter {
 
       this.transport = transport;
       this.path = info.path;
+      this.connections += 1;
       this.options.log.info(`Volante conectado (${this.options.factory.kind})`);
       this.emit("connected");
       await this.refreshAllInternal();
@@ -299,19 +404,39 @@ export class WheelDevice extends EventEmitter {
   }
 
   private async refreshAllInternal(): Promise<DeviceSettings> {
-    const effects = decodeEffects(this.readGroup("effects"));
-    const hardware = decodeHardware(this.readGroup("hardware"));
-    const gpio = decodeGpio(this.readGroup("gpio"));
-    const adc = decodeAdc(this.readGroup("adc"));
-    const license = decodeLicense(
-      this.requireTransport().getFeatureReport(FEATURE_REPORT.license),
-    );
+    let forceStillEnabled = false;
+    try {
+      const effects = decodeEffects(this.readGroup("effects"));
+      const hardware = decodeHardware(this.readGroup("hardware"));
+      const gpio = decodeGpio(this.readGroup("gpio"));
+      const adc = decodeAdc(this.readGroup("adc"));
+      const license = decodeLicense(
+        this.requireTransport().getFeatureReport(FEATURE_REPORT.license),
+      );
 
-    this.settings = { effects, hardware, gpio, adc };
-    this.license = license;
+      this.settings = { effects, hardware, gpio, adc };
+      this.license = license;
+      forceStillEnabled = hardware.forceEnabled === 1;
+    } catch (error) {
+      this.noteFailure(error);
+      throw error;
+    }
+    this.noteSuccess();
+
+    if (this.pendingForceCheck) {
+      this.pendingForceCheck = false;
+      this.emit("safety", {
+        ok: !forceStillEnabled,
+        forceEnabled: forceStillEnabled,
+        message: forceStillEnabled
+          ? "El volante sigue con la fuerza activada tras el reinicio. Revísalo en Hardware."
+          : "Fuerzas desactivadas y verificadas.",
+      });
+    }
+
     this.emit("settings", this.settings);
-    this.emit("license", license);
-    return this.settings;
+    this.emit("license", this.license);
+    return this.settings as DeviceSettings;
   }
 
   private validate(def: FieldDef, value: number, index: number): void {
@@ -366,22 +491,31 @@ export class WheelDevice extends EventEmitter {
       throw new HttpError(422, compatibility, "unsupported_field", { field: def.name });
     }
 
+    this.assertStable();
     const transport = this.requireTransport();
-    transport.write(encodeSetting(def.id, index, def.type, value));
-    await delay(postDelay);
+    try {
+      transport.write(encodeSetting(def.id, index, def.type, value));
+      await delay(postDelay);
 
-    if (def.readback && !def.requiresReboot) {
-      const payload = this.readGroup(def.group as "effects" | "hardware" | "gpio" | "adc");
-      const actual = readFieldValue(payload, def.name, index);
-      if (actual !== value) {
-        throw new HttpError(
-          409,
-          `El volante no aceptó ${def.label} (esperado ${value}, leído ${String(actual)})`,
-          "readback_failed",
-          { field: def.name, index, expected: value, actual: actual ?? null },
+      if (def.readback && !def.requiresReboot) {
+        const payload = this.readGroup(
+          def.group as "effects" | "hardware" | "gpio" | "adc",
         );
+        const actual = readFieldValue(payload, def.name, index);
+        if (actual !== value) {
+          throw new HttpError(
+            409,
+            `El volante no aceptó ${def.label} (esperado ${value}, leído ${String(actual)})`,
+            "readback_failed",
+            { field: def.name, index, expected: value, actual: actual ?? null },
+          );
+        }
       }
+    } catch (error) {
+      this.noteFailure(error);
+      throw error;
     }
+    this.noteSuccess();
     // Los campos con requiresReboot (fuerza, GPIO, reset Z0...) no se aplican
     // hasta guardar y reiniciar; el firmware sigue devolviendo el valor viejo,
     // asi que no tiene sentido hacer read-back aqui. La UI encadena el save.

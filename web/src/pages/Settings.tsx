@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { apiGet } from "../api";
+import { apiGet, apiGetBlob, errorMessage } from "../api";
 import { ToggleSwitch } from "../components/controls";
 import { Badge, Button, Card, PageHeader, Spinner } from "../components/ui";
 import { useHub } from "../hub";
 import type { Diagnostics } from "../types";
+import { displayVersion } from "../version";
 
 function formatUptime(seconds: number | undefined): string {
   if (seconds === undefined) return "—";
@@ -30,6 +31,7 @@ export function Settings(): React.ReactElement {
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     if (!session?.loopback) return;
@@ -93,6 +95,34 @@ export function Settings(): React.ReactElement {
     }
   };
 
+  const reloadLogs = async (): Promise<void> => {
+    try {
+      const data = await apiGet<{ lines: string[] }>("/api/logs?lines=250");
+      setLogs(data.lines);
+      notify("Registro actualizado", "success");
+    } catch (error) {
+      notify(errorMessage(error), "error");
+    }
+  };
+
+  const downloadDiagnostics = async (): Promise<void> => {
+    setDownloading(true);
+    try {
+      const blob = await apiGetBlob("/api/diagnostics/download");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "ffbeast-diagnostics.zip";
+      link.click();
+      URL.revokeObjectURL(url);
+      notify("Diagnóstico descargado", "success");
+    } catch (error) {
+      notify(errorMessage(error), "error");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const masked = token ? `${token.slice(0, 6)}…${token.slice(-4)}` : "—";
 
   return (
@@ -112,7 +142,7 @@ export function Settings(): React.ReactElement {
             </div>
             <div>
               <dt>Versión</dt>
-              <dd>v{status?.version ?? "0.1.0"}</dd>
+              <dd>v{displayVersion(status?.version)}</dd>
             </div>
             <div>
               <dt>Puerto</dt>
@@ -138,9 +168,17 @@ export function Settings(): React.ReactElement {
               id="readonly"
               checked={Boolean(config?.readOnly)}
               label="Modo solo lectura"
+              disabled={Boolean(config?.readOnly) && !session?.loopback}
               onChange={(next) => void updateConfig({ readOnly: next })}
             />
           </div>
+
+          {config?.readOnly && !session?.loopback && (
+            <p className="muted">
+              Solo el PC puede desactivar el modo solo lectura. Desde el móvil
+              puedes activarlo, pero no deshacerlo.
+            </p>
+          )}
 
           {session?.loopback && (
             <div className="setting-row">
@@ -153,6 +191,24 @@ export function Settings(): React.ReactElement {
                 checked={Boolean(config?.allowSaveCommand)}
                 label="Permitir guardar y reiniciar"
                 onChange={(next) => void updateConfig({ allowSaveCommand: next })}
+              />
+            </div>
+          )}
+
+          {session?.loopback && config?.autostart !== undefined && (
+            <div className="setting-row">
+              <div>
+                <strong>Iniciar con Windows</strong>
+                <p>
+                  Arranca en la bandeja al iniciar sesión. No requiere
+                  administrador.
+                </p>
+              </div>
+              <ToggleSwitch
+                id="autostart"
+                checked={Boolean(config.autostart)}
+                label="Iniciar con Windows"
+                onChange={(next) => void updateConfig({ autostart: next })}
               />
             </div>
           )}
@@ -289,6 +345,22 @@ export function Settings(): React.ReactElement {
                     : "no detectado"}
                 </dd>
               </div>
+              <div>
+                <dt>Salud</dt>
+                <dd>
+                  {diagnostics.health?.degraded
+                    ? `Inestable (${diagnostics.health.consecutiveFailures} fallos seguidos)`
+                    : "Correcta"}
+                </dd>
+              </div>
+              <div>
+                <dt>Pit House</dt>
+                <dd>
+                  {diagnostics.conflict?.active
+                    ? `Abierto (${diagnostics.conflict.process ?? "proceso"})`
+                    : "No detectado"}
+                </dd>
+              </div>
             </dl>
             <div className="row wrap">
               <Button
@@ -297,6 +369,13 @@ export function Settings(): React.ReactElement {
                 onClick={() => void copy(JSON.stringify(diagnostics, null, 2))}
               >
                 Copiar diagnóstico
+              </Button>
+              <Button
+                icon="download"
+                disabled={downloading}
+                onClick={() => void downloadDiagnostics()}
+              >
+                Descargar ZIP
               </Button>
             </div>
           </>
@@ -312,7 +391,7 @@ export function Settings(): React.ReactElement {
               size="sm"
               variant="ghost"
               icon="refresh"
-              onClick={() => window.location.reload()}
+              onClick={() => void reloadLogs()}
             >
               Recargar
             </Button>
@@ -332,7 +411,7 @@ export function Settings(): React.ReactElement {
           (MIT). No incluye firmware ni software propietario de FFBeast.
         </p>
         <p className="muted">
-          Hub v{status?.version ?? "0.1.0"} · API v1 · datos en{" "}
+          Hub v{displayVersion(status?.version)} · API v1 · datos en{" "}
           <code>%APPDATA%\ffbeast-remote</code>
         </p>
       </Card>

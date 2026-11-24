@@ -1,0 +1,49 @@
+[package]
+name = "ffbeast-hub"
+version = "1.0.0"
+edition = "2021"
+description = "Hub HID de FFBeast Remote (Rust)"
+license = "MIT"
+
+[[bin]]
+name = "probe"
+path = "src/probe.rs"
+
+[[bin]]
+name = "ffbeast-hub"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.8", features = ["ws", "macros"] }
+base64 = "0.22"
+chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
+hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+local-ip-address = "0.6"
+mime_guess = "2"
+qrcode = "0.14"
+rand = "0.9"
+rust-embed = "8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+single-instance = "0.3"
+subtle = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "fs", "signal"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "set-header"] }
+tray-icon = { version = "0.26", default-features = false }
+uuid = { version = "1", features = ["v4"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+    "Win32_UI_WindowsAndMessaging",
+] }
+winit = { version = "0.30", default-features = false }
+winreg = "0.56"
+zip = "4"
+
+

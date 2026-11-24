@@ -1,5 +1,6 @@
+import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
-import { RateLimiter, parseCookies, safeEqual } from "../src/server/auth.js";
+import { Auth, RateLimiter, parseCookies, safeEqual } from "../src/server/auth.js";
 
 describe("auth", () => {
   it("compara tokens en tiempo constante", () => {
@@ -16,6 +17,19 @@ describe("auth", () => {
       b: "2",
     });
     expect(parseCookies(undefined)).toEqual({});
+  });
+
+  it("reconoce todo 127/8 como loopback", () => {
+    const auth = new Auth("token");
+    const req = (address: string): IncomingMessage =>
+      ({ socket: { remoteAddress: address } }) as IncomingMessage;
+
+    expect(auth.isLoopback(req("127.0.0.1"))).toBe(true);
+    expect(auth.isLoopback(req("127.0.0.2"))).toBe(true);
+    expect(auth.isLoopback(req("::1"))).toBe(true);
+    expect(auth.isLoopback(req("::ffff:127.0.0.1"))).toBe(true);
+    expect(auth.isLoopback(req("192.168.1.30"))).toBe(false);
+    expect(auth.isLoopback(req("::ffff:192.168.1.30"))).toBe(false);
   });
 });
 
