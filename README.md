@@ -140,16 +140,16 @@ npm run dev:mock
 
 ### Variables de entorno
 
-| Variable | Efecto |
-|---|---|
-| `FFBEAST_PORT` | Puerto HTTP (por defecto 47100) |
-| `FFBEAST_TOKEN` | Fija el token; si no, se genera uno aleatorio |
-| `FFBEAST_MOCK=1` | Usa el volante simulado |
-| `FFBEAST_READ_ONLY=1` | Arranca en solo lectura |
-| `FFBEAST_DATA_DIR` | Cambia la carpeta de datos |
-| `FFBEAST_STATE_HZ` | Frecuencia del estado en vivo (1–60) |
-| `FFBEAST_LOG_LEVEL` | `debug`, `info`, `warn`, `error` |
-| `FFBEAST_OPEN=1` | Abre el navegador al arrancar (solo hub Node) |
+| Variable              | Efecto                                        |
+| --------------------- | --------------------------------------------- |
+| `FFBEAST_PORT`        | Puerto HTTP (por defecto 47100)               |
+| `FFBEAST_TOKEN`       | Fija el token; si no, se genera uno aleatorio |
+| `FFBEAST_MOCK=1`      | Usa el volante simulado                       |
+| `FFBEAST_READ_ONLY=1` | Arranca en solo lectura                       |
+| `FFBEAST_DATA_DIR`    | Cambia la carpeta de datos                    |
+| `FFBEAST_STATE_HZ`    | Frecuencia del estado en vivo (1–60)          |
+| `FFBEAST_LOG_LEVEL`   | `debug`, `info`, `warn`, `error`              |
+| `FFBEAST_OPEN=1`      | Abre el navegador al arrancar (solo hub Node) |
 
 El hub Rust acepta las mismas opciones como argumentos: `--port`, `--mock`,
 `--read-only`, `--state-hz`, `--log-level`, `--data-dir`, además de `--open`,
@@ -262,30 +262,30 @@ Base: `http://<host>:47100`. Autenticación por `Authorization: Bearer <token>`,
 `?t=<token>` o cookie HttpOnly (solo localhost). También existe el alias
 `/api/v1/...`.
 
-| Método | Ruta | Descripción |
-|---|---|---|
-| GET | `/api/health` | Sin auth; en localhost siembra la cookie de sesión |
-| GET | `/api/status` | Conexión, firmware, licencia, modo |
-| GET | `/api/session` | `authenticated`, `loopback` y `readOnly` |
-| GET | `/api/fields` | Metadatos de los campos de ajustes |
-| GET | `/api/settings` | Ajustes + metadatos de campos |
-| POST | `/api/settings` | `{ field, index?, value }` (nombre o ID) |
-| POST | `/api/settings/apply` | Aplica un bloque o perfil |
-| GET | `/api/state` | Última posición/torque y ejes del joystick |
-| POST | `/api/safety/disable-forces` | Desactiva la fuerza y guarda/reinicia (solo si `save` está permitido) |
-| POST | `/api/command` | `reset-center`, `save`, `reboot`, `dfu` |
-| GET/POST | `/api/profiles` | Lista / crea |
-| POST | `/api/profiles/apply` | Aplica `{ id }` |
-| DELETE | `/api/profiles/:id` | Borra |
-| GET/POST | `/api/profiles/export` · `/import` | Exporta / importa JSON |
-| GET/POST | `/api/config` | Configuración pública: solo lectura, comandos y autostart (Rust) |
-| GET | `/api/token` | Solo localhost |
-| POST | `/api/token/regenerate` | Solo localhost |
-| GET | `/api/qr` · `/api/qr/url` | Solo localhost |
-| GET | `/api/logs` | Solo localhost |
-| GET | `/api/diagnostics` | Estado, salud, conflicto, red, HID, rutas |
-| GET | `/api/diagnostics/download` | ZIP con diagnóstico, config redactada y log (solo localhost) |
-| WS | `/api/ws?t=` | `hello`, `status`, `settings`, `state`, `safety`, `error` |
+| Método   | Ruta                               | Descripción                                                           |
+| -------- | ---------------------------------- | --------------------------------------------------------------------- |
+| GET      | `/api/health`                      | Sin auth; en localhost siembra la cookie de sesión                    |
+| GET      | `/api/status`                      | Conexión, firmware, licencia, modo                                    |
+| GET      | `/api/session`                     | `authenticated`, `loopback` y `readOnly`                              |
+| GET      | `/api/fields`                      | Metadatos de los campos de ajustes                                    |
+| GET      | `/api/settings`                    | Ajustes + metadatos de campos                                         |
+| POST     | `/api/settings`                    | `{ field, index?, value }` (nombre o ID)                              |
+| POST     | `/api/settings/apply`              | Aplica un bloque o perfil                                             |
+| GET      | `/api/state`                       | Última posición/torque y ejes del joystick                            |
+| POST     | `/api/safety/disable-forces`       | Desactiva la fuerza y guarda/reinicia (solo si `save` está permitido) |
+| POST     | `/api/command`                     | `reset-center`, `save`, `reboot`, `dfu`                               |
+| GET/POST | `/api/profiles`                    | Lista / crea                                                          |
+| POST     | `/api/profiles/apply`              | Aplica `{ id }`                                                       |
+| DELETE   | `/api/profiles/:id`                | Borra                                                                 |
+| GET/POST | `/api/profiles/export` · `/import` | Exporta / importa JSON                                                |
+| GET/POST | `/api/config`                      | Configuración pública: solo lectura, comandos y autostart (Rust)      |
+| GET      | `/api/token`                       | Solo localhost                                                        |
+| POST     | `/api/token/regenerate`            | Solo localhost                                                        |
+| GET      | `/api/qr` · `/api/qr/url`          | Solo localhost                                                        |
+| GET      | `/api/logs`                        | Solo localhost                                                        |
+| GET      | `/api/diagnostics`                 | Estado, salud, conflicto, red, HID, rutas                             |
+| GET      | `/api/diagnostics/download`        | ZIP con diagnóstico, config redactada y log (solo localhost)          |
+| WS       | `/api/ws?t=`                       | `hello`, `status`, `settings`, `state`, `safety`, `error`             |
 
 Errores: `400` JSON inválido, `401` token, `403` prohibido/solo lectura,
 `404` no encontrado, `409` desconectado o read-back fallido, `413` payload,
@@ -374,18 +374,18 @@ GPIO, ADC y licencia, y añade la decodificación de reportes reales del volante
 
 ## Problemas frecuentes
 
-| Síntoma | Qué mirar |
-|---|---|
-| El móvil dice «Reconectando con el hub» | PC encendido, hub abierto, misma WiFi, firewall privado |
+| Síntoma                                   | Qué mirar                                                                                                                        |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| El móvil dice «Reconectando con el hub»   | PC encendido, hub abierto, misma WiFi, firewall privado                                                                          |
 | Chrome Android 17: `ERR_TOO_MANY_RETRIES` | Permiso **Dispositivos cercanos** para Chrome (Ajustes → Aplicaciones → Chrome → Permisos); si ya está, quítalo y vuelve a darlo |
-| «Volante no detectado» con el USB puesto | Puerto USB, modo DFU, administración de energía del puerto |
-| `node-hid` no carga | `npm rebuild node-hid`; usa Node 22 LTS; instala Build Tools si no hay prebuild |
-| El puerto 47100 está ocupado | Cierra otra instancia o cambia `port` en `config.json` |
-| Los cambios no se aplican | Cierra Pit House: dos procesos no deben escribir a la vez |
-| No aparece el QR | Es una ruta de solo localhost: ábrela desde el PC |
-| Cerrar la pestaña no detiene el hub | Es intencional: usa **Salir** en la bandeja del sistema |
-| Abrir el `.exe` no inicia otra copia | Hay una sola instancia: el acceso directo abre la UI del hub que ya está en la bandeja |
-| Windows SmartScreen al distribuir | Firma el ejecutable o documenta «Más información → Ejecutar» |
+| «Volante no detectado» con el USB puesto  | Puerto USB, modo DFU, administración de energía del puerto                                                                       |
+| `node-hid` no carga                       | `npm rebuild node-hid`; usa Node 22 LTS; instala Build Tools si no hay prebuild                                                  |
+| El puerto 47100 está ocupado              | Cierra otra instancia o cambia `port` en `config.json`                                                                           |
+| Los cambios no se aplican                 | Cierra Pit House: dos procesos no deben escribir a la vez                                                                        |
+| No aparece el QR                          | Es una ruta de solo localhost: ábrela desde el PC                                                                                |
+| Cerrar la pestaña no detiene el hub       | Es intencional: usa **Salir** en la bandeja del sistema                                                                          |
+| Abrir el `.exe` no inicia otra copia      | Hay una sola instancia: el acceso directo abre la UI del hub que ya está en la bandeja                                           |
+| Windows SmartScreen al distribuir         | Firma el ejecutable o documenta «Más información → Ejecutar»                                                                     |
 
 No uses **Zadig/libusb** con el volante: sustituye el driver HID y deja de
 detectarse.
@@ -415,12 +415,12 @@ detectarse.
 
 ## Hoja de ruta
 
-| Fase | Contenido |
-|---|---|
-| M4 | ✅ Pines, Botones, Ejes y Monitor |
-| M5 | ✅ Bandeja, instalador por usuario, regla de firewall automática |
-| M6 | 🔶 Dynamic dampening ✅; quedan pruebas prolongadas de estabilidad USB con hardware real |
-| M7 | ✅ Hub en Rust, `rust-embed`, bandeja, autostart e instalador; quedan firma y auto-update |
+| Fase | Contenido                                                                                 |
+| ---- | ----------------------------------------------------------------------------------------- |
+| M4   | ✅ Pines, Botones, Ejes y Monitor                                                         |
+| M5   | ✅ Bandeja, instalador por usuario, regla de firewall automática                          |
+| M6   | 🔶 Dynamic dampening ✅; quedan pruebas prolongadas de estabilidad USB con hardware real  |
+| M7   | ✅ Hub en Rust, `rust-embed`, bandeja, autostart e instalador; quedan firma y auto-update |
 
 La migración a Rust solo afecta a `hub/`: la API y la PWA no cambian.
 
@@ -433,3 +433,4 @@ La migración a Rust solo afecta a `hub/`: la API y la PWA no cambian.
 - El protocolo se ha implementado a partir de la documentación oficial y de
   `ffbeast-wheel-api-lib` (publicada para software de terceros).
 - No se incluye ni se modifica firmware, ni se usan logos de FFBeast.
+  AAAAAAAAAAAAAAAAAAAAAAAAAAA
