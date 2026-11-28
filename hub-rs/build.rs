@@ -65,11 +65,22 @@ END
     );
     fs::write(temp.join("resource.rc"), rc).expect("no se pudo escribir resource.rc");
 
-    let status = Command::new("windres")
+    let status = match Command::new("windres")
         .current_dir(&temp)
         .args(["resource.rc", "-O", "coff", "-o", "resource.res"])
         .status()
-        .expect("no se encontró windres. Añade el bin de WinLibs al PATH.");
+    {
+        Ok(status) => status,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // El icono y la version son opcionales; el hub funciona sin ellos.
+            // Asi se puede compilar el .exe en equipos sin WinLibs.
+            println!(
+                "cargo:warning=windres no encontrado; se omite el icono y la version del .exe"
+            );
+            return;
+        }
+        Err(error) => panic!("no se pudo ejecutar windres: {error}"),
+    };
     if !status.success() {
         panic!("windres falló al compilar el recurso de Windows");
     }

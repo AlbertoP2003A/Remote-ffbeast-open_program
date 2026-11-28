@@ -2330,6 +2330,61 @@ code {
   border-top: 1px solid var(--border);
 }
 
+.calibration-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.calibration-head em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.wizard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.pedal-wizard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+
+.wizard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wizard-head strong {
+  font-size: 12px;
+}
+
+.wizard-step {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.wizard-message {
+  margin: 0;
+}
+
 .pedal-calibration summary {
   list-style: none;
   display: flex;

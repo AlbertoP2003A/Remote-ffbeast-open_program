@@ -54,7 +54,10 @@ export interface HubContextValue {
   notices: Notice[];
 
   setField(name: string, value: number, index?: number): Promise<void>;
-  applySettings(patch: Partial<DeviceSettings>): Promise<void>;
+  applySettings(
+    patch: Partial<DeviceSettings>,
+    options?: { silent?: boolean },
+  ): Promise<void>;
   runCommand(name: string): Promise<void>;
   disableForces(): Promise<void>;
   refreshAll(): Promise<void>;
@@ -310,14 +313,14 @@ export function HubProvider({ children }: { children: React.ReactNode }): React.
   }, [handleUnauthorized, notify]);
 
   const applySettings = useCallback(
-    async (patch: Partial<DeviceSettings>) => {
+    async (patch: Partial<DeviceSettings>, options?: { silent?: boolean }) => {
       try {
         const res = await apiPost<{
           settings: DeviceSettings;
           restartRequired?: boolean;
         }>("/api/settings/apply", { settings: patch });
         setSettings(res.settings);
-        notify("Ajustes aplicados", "success");
+        if (!options?.silent) notify("Ajustes aplicados", "success");
         if (res.restartRequired) {
           notify("Hay ajustes que requieren reiniciar; guardando…", "info");
           await runCommand("save");

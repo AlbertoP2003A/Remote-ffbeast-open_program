@@ -5,7 +5,7 @@ import path from "node:path";
 import { DEFAULT_CONFLICT_PROCESSES } from "./domain/conflict.js";
 import type { AppConfig, LogLevel } from "./hid/types.js";
 
-export const VERSION = "1.0.0";
+export const VERSION = "1.2.1";
 
 export function appDataDir(): string {
   if (process.env.FFBEAST_DATA_DIR) return path.resolve(process.env.FFBEAST_DATA_DIR);

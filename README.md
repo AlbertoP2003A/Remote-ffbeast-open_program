@@ -28,7 +28,7 @@ el dispositivo simulado:
 - **Pines**: 10 pines con sus modos, extensión y bus SPI.
 - **Botones**: matriz de 32 botones con modos y edición por lotes.
 - **Ejes**: 3 ejes ADC con zonas muertas, suavizado y umbrales.
-- **Pedales**: lectura en vivo de los 3 ejes del joystick y calibración local.
+- **Pedales**: lectura en vivo de los 3 ejes del joystick y calibración real en el firmware, con asistente de reposo/fondo y guardado en el volante.
 - **Monitor**: gráfica de posición/torque de 30 s, pausa y exportación CSV.
 - **Dynamic dampening** (Effects, offset 14) para firmware 24.1.5+ y licencia PRO.
 - Token, QR, rate limit, modo solo lectura, diagnóstico ZIP y registro.
@@ -79,7 +79,7 @@ y un **QR** para escanear con el móvil.
 El hub Rust se distribuye como instalador **por usuario**, sin administrador:
 
 ```
-dist\FFBeastRemote-Setup-1.0.0.exe
+dist\FFBeastRemote-Setup-1.2.1.exe
 ```
 
 - Instala en `%LOCALAPPDATA%\FFBeast Remote` y crea accesos directos en Inicio
@@ -107,7 +107,7 @@ El instalador y su SHA-256 quedan en `dist\`.
 
 ### Paquete portable
 
-Alternativa sin instalación: `hub-rs\target\ffbeast-hub-1.0.0-win64.zip`
+Alternativa sin instalación: `hub-rs\target\ffbeast-hub-1.2.1-win64.zip`
 contiene `ffbeast-hub.exe`, `start.cmd`, `firewall.ps1`, `README.txt` y
 `LICENSE`. El `.exe` es autónomo (PWA embebida) y comparte configuración con el
 instalador.
